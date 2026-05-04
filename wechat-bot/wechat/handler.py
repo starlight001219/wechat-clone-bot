@@ -1,195 +1,188 @@
-"""微信消息处理器 - 使用 WeChatFerry 与微信客户端交互"""
+"""微信消息处理器 - 使用 omni-bot-sdk 驱动"""
 
+import sys
 import time
 import random
 import threading
+import os.path
+from pathlib import Path
 from typing import Callable, Optional
 from loguru import logger
 
-from config import settings, get_whitelist, get_reply_mode
-
 
 class WeChatHandler:
-    """微信消息收发处理器"""
+    """基于 omni-bot-sdk 的微信消息处理器"""
 
     def __init__(self, on_message: Optional[Callable] = None):
-        self.wcf = None
-        self.running = False
-        self.on_message = on_message  # 回调: on_message(sender_name, content, wxid)
-        self._bot_wxid: Optional[str] = None
-        self._bot_name: Optional[str] = None
-        self._contacts: dict[str, str] = {}  # wxid -> name
+        """
+        Args:
+            on_message: 消息回调，签名 on_message(sender_name, content, sender_id)
+        """
+        self.on_message = on_message
+        self._bot = None
+        self._msg_service = None
+        self._window_mgr = None
+        self._running = False
+        self._known_senders: dict[str, str] = {}  # name -> display name
 
-    def start(self):
+    def start(self, config_path: str = "") -> bool:
         """启动微信连接"""
         try:
-            import wcf
-            self.wcf = wcf.Wcf()
-            logger.info("WeChatFerry 连接成功")
+            sdk_path = os.path.join(
+                os.path.dirname(__file__), '..', '..', 'omni-bot-sdk-oss', 'src'
+            )
+            sys.path.insert(0, os.path.abspath(sdk_path))
+            from omni_bot_sdk.bot import Bot
 
-            # 获取机器人自身信息
-            self._bot_wxid = self.wcf.get_self_wxid()
-            logger.info(f"机器人微信ID: {self._bot_wxid}")
+            if not config_path:
+                config_path = os.path.join(
+                    os.path.dirname(__file__), '..', 'omni_config.yaml'
+                )
 
-            # 获取通讯录
-            self._refresh_contacts()
+            self._bot = Bot(config_path=config_path)
+            logger.info(f"微信用户: {self._bot.user_info.nickname}")
+            logger.info(f"版本: {self._bot.user_info.version}")
+
+            self._window_mgr = self._bot.window_manager
+
+            # 校准 UI 位置（非必需，发送功能可能受限）
+            try:
+                self._window_mgr.init_chat_window()
+            except Exception as e:
+                logger.warning(f"窗口校准不完整: {e}")
 
             # 启动消息监听
-            self.running = True
-            self._listen_thread = threading.Thread(target=self._message_loop, daemon=True)
-            self._listen_thread.start()
-            logger.info("消息监听已启动")
+            from omni_bot_sdk.services.core.message_service import MessageService
+            self._msg_service = MessageService(
+                self._bot.message_queue, self._bot.db
+            )
+            self._msg_service.set_callback(self._on_new_messages)
+            self._msg_service.start()
 
+            self._running = True
+            logger.info("消息监听已启动")
             return True
 
-        except ImportError:
-            logger.error("未安装 wcf 库，请运行: pip install wcf")
+        except ImportError as e:
+            logger.error(f"导入失败: {e}")
             return False
         except Exception as e:
-            logger.error(f"微信连接失败: {e}")
+            logger.error(f"初始化失败: {e}")
             return False
 
     def stop(self):
-        """停止微信连接"""
-        self.running = False
-        if self.wcf:
+        """停止"""
+        self._running = False
+        if self._msg_service:
             try:
-                self.wcf.cleanup()
+                self._msg_service.stop()
             except Exception:
                 pass
-        logger.info("微信连接已关闭")
+        logger.info("微信处理器已关闭")
 
-    def _refresh_contacts(self):
-        """刷新通讯录"""
-        try:
-            contacts = self.wcf.get_contacts()
-            self._contacts = {}
-            for c in contacts:
-                wxid = c.get("wxid", "")
-                name = c.get("name", "") or c.get("remark", "") or c.get("nickname", "")
-                if wxid and name:
-                    self._contacts[wxid] = name
-            logger.info(f"已加载 {len(self._contacts)} 个联系人")
-        except Exception as e:
-            logger.error(f"获取通讯录失败: {e}")
+    def _on_new_messages(self, messages: list):
+        """omni-bot-sdk 消息回调"""
+        if not self.on_message or not self._running:
+            return
 
-    def get_contact_name(self, wxid: str) -> str:
-        """获取联系人名称"""
-        return self._contacts.get(wxid, wxid)
-
-    def _message_loop(self):
-        """消息监听循环"""
-        while self.running:
+        for msg in messages:
             try:
-                msgs = self.wcf.get_msg()
-                for msg in msgs:
-                    self._process_message(msg)
-                time.sleep(0.5)
+                # 消息格式: (content, [path_parts...], ...)
+                if isinstance(msg, (list, tuple)) and len(msg) >= 2:
+                    content = str(msg[0]) if msg[0] else ""
+
+                    # 提取发送者名称
+                    sender_raw = msg[1]
+                    if isinstance(sender_raw, list) and sender_raw:
+                        sender = sender_raw[-1]
+                    elif isinstance(sender_raw, str):
+                        sender = Path(sender_raw).stem
+                    else:
+                        sender = str(sender_raw)
+
+                    # 跳过自己的消息
+                    if not content:
+                        continue
+
+                    logger.info(f"[{sender}] {content[:80]}")
+                    self.on_message(sender, content, sender)
+
             except Exception as e:
-                logger.error(f"消息监听异常: {e}")
-                time.sleep(1)
+                logger.error(f"处理消息出错: {e}")
 
-    def _process_message(self, msg: dict):
-        """处理单条消息"""
-        try:
-            msg_type = msg.get("type", 0)
-            content = msg.get("content", "").strip()
-            sender = msg.get("sender", "")
-            roomid = msg.get("roomid", "")
-
-            # 只处理文本消息 (type=1)
-            if msg_type != 1 or not content:
-                return
-
-            # 跳过自己的消息
-            if sender == self._bot_wxid:
-                return
-
-            # 获取发送者名称
-            sender_name = self.get_contact_name(sender)
-
-            # 判断是否应该回复
-            if not self._should_reply(sender_name, sender, content):
-                return
-
-            logger.info(f"收到消息 from {sender_name}({sender}): {content}")
-
-            # 调用回调
-            if self.on_message:
-                self.on_message(sender_name, content, sender)
-
-        except Exception as e:
-            logger.error(f"消息处理异常: {e}")
-
-    def _should_reply(self, name: str, wxid: str, content: str) -> bool:
-        """判断是否应该回复"""
-        mode = get_reply_mode()
-
-        if mode == "whitelist":
-            whitelist = get_whitelist()
-            return name in whitelist or wxid in whitelist
-
-        if mode == "keyword":
-            keywords = get_whitelist()
-            if not keywords:
-                return True  # 无关键词时默认回复全部
-            return any(kw in content for kw in keywords)
-
-        # mode == "all"
-        return True
-
-    def send_text(self, text: str, receiver: str):
+    def send_text(self, text: str, receiver: str = "") -> bool:
         """发送文本消息"""
-        if not self.wcf:
-            logger.warning("微信未连接")
-            return False
-
         try:
-            self.wcf.send_text(text, receiver)
-            logger.info(f"已发送消息给 {receiver}: {text[:50]}...")
-            return True
+            if not self._window_mgr:
+                return False
+
+            if receiver and not self._window_mgr.switch_session(receiver):
+                logger.warning(f"切换到 [{receiver}] 失败")
+                return False
+
+            from omni_bot_sdk.rpa.message_sender import MessageSender
+            sender = MessageSender(self._window_mgr)
+            result = sender.send_message(text)
+            if result:
+                logger.info(f"已发送 -> {receiver}: {text[:40]}")
+            return result
+
         except Exception as e:
-            logger.error(f"发送消息失败: {e}")
+            logger.error(f"发送失败: {e}")
             return False
 
-    def send_voice(self, voice_path: str, receiver: str):
-        """发送语音消息"""
-        if not self.wcf:
-            logger.warning("微信未连接")
-            return False
-
+    def send_voice(self, voice_path: str, receiver: str = "") -> bool:
+        """发送语音文件"""
         try:
-            self.wcf.send_file(voice_path, receiver)
-            logger.info(f"已发送语音给 {receiver}")
+            if not os.path.exists(voice_path):
+                return False
+            if not self._window_mgr:
+                return False
+
+            if receiver and not self._window_mgr.switch_session(receiver):
+                return False
+
+            import pyautogui
+            from omni_bot_sdk.utils.helpers import copy_file_to_clipboard
+
+            if not self._window_mgr.activate_input_box():
+                return False
+            if not copy_file_to_clipboard(voice_path):
+                return False
+
+            pyautogui.hotkey("ctrl", "v")
+            time.sleep(0.5)
+            pyautogui.press("enter")
+            logger.info(f"已发送语音: {voice_path}")
             return True
+
         except Exception as e:
             logger.error(f"发送语音失败: {e}")
             return False
 
-    def reply_with_delay(self, text: str, receiver: str, delay_range: tuple[float, float] = None):
-        """带延迟回复，模拟真人"""
+    def reply_with_delay(self, text: str, receiver: str = "",
+                         delay_range: tuple[float, float] = None):
+        """带随机延迟回复"""
         if delay_range is None:
-            delay_range = (settings.reply_delay_min, settings.reply_delay_max)
+            delay_range = (1.0, 5.0)
 
-        def _do_reply():
-            delay = random.uniform(*delay_range)
-            logger.info(f"回复延迟 {delay:.1f} 秒")
-            time.sleep(delay)
+        def _do():
+            time.sleep(random.uniform(*delay_range))
             self.send_text(text, receiver)
 
-        threading.Thread(target=_do_reply, daemon=True).start()
+        threading.Thread(target=_do, daemon=True).start()
 
-    def reply_with_voice_delay(self, text: str, voice_path: str, receiver: str, delay_range: tuple[float, float] = None):
-        """带延迟回复语音"""
+    def reply_with_voice_delay(self, text: str, voice_path: str,
+                                receiver: str = "",
+                                delay_range: tuple[float, float] = None):
+        """带延迟回复文字+语音"""
         if delay_range is None:
-            delay_range = (settings.reply_delay_min, settings.reply_delay_max)
+            delay_range = (1.0, 5.0)
 
-        def _do_reply():
-            delay = random.uniform(*delay_range)
-            logger.info(f"语音回复延迟 {delay:.1f} 秒")
-            time.sleep(delay)
+        def _do():
+            time.sleep(random.uniform(*delay_range))
             self.send_text(text, receiver)
-            time.sleep(0.5)
+            time.sleep(0.3)
             self.send_voice(voice_path, receiver)
 
-        threading.Thread(target=_do_reply, daemon=True).start()
+        threading.Thread(target=_do, daemon=True).start()

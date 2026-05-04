@@ -84,9 +84,8 @@ class WeChatBot:
         # 2. 连接微信
         if not self.wechat.start():
             logger.error("微信连接失败！请确保:")
-            logger.error("1. 已安装 wcf 库: pip install wcf")
-            logger.error("2. Windows 微信客户端已登录")
-            logger.error("3. WeChatFerry 正常运行")
+            logger.error("1. 微信 Windows 客户端已登录")
+            logger.error("2. omni-bot-sdk 已正确安装")
             return False
 
         logger.info("机器人已上线！等待消息中...")

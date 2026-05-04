@@ -1,0 +1,43 @@
+# 虚拟环境
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 环境配置
+.env
+
+# 日志
+*.log
+logs/
+
+# 语音缓存
+voice_cache/
+
+# 运行时图片
+runtime_images/
+
+# IDE
+.vscode/
+.idea/
+
+# 系统
+Thumbs.db
+.DS_Store
+
+# 聊天记录（可能含隐私）
+chat_history.json
+
+# 模型文件
+*.pt
+*.pth
+*.onnx
+
+# 安装包
+*.exe
+*.msi
