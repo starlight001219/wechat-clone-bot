@@ -22,6 +22,7 @@
 
 import sys
 import signal
+import time
 import argparse
 from pathlib import Path
 from loguru import logger
@@ -218,8 +219,9 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     if bot.start():
-        # 保持主线程运行
-        signal.pause()
+        # 保持主线程运行 (兼容 Windows)
+        while True:
+            time.sleep(1)
 
 
 if __name__ == "__main__":

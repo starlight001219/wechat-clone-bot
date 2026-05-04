@@ -30,6 +30,15 @@ runtime_images/
 Thumbs.db
 .DS_Store
 
+# 外部 SDK
+omni-bot-sdk-oss/
+wxauto/
+
+# 临时测试脚本
+wechat-bot/tools/demo_test.py
+wechat-bot/tools/quick_test.py
+wechat-bot/tools/explore_wechat.py
+
 # 聊天记录（可能含隐私）
 chat_history.json
 

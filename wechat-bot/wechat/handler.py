@@ -81,31 +81,41 @@ class WeChatHandler:
         logger.info("微信处理器已关闭")
 
     def _on_new_messages(self, messages: list):
-        """omni-bot-sdk 消息回调"""
+        """omni-bot-sdk 消息回调 - 处理数据库轮询消息"""
         if not self.on_message or not self._running:
             return
 
         for msg in messages:
             try:
-                # 消息格式: (content, [path_parts...], ...)
-                if isinstance(msg, (list, tuple)) and len(msg) >= 2:
-                    content = str(msg[0]) if msg[0] else ""
+                # 消息格式: (table_name, db_row_tuple)
+                # db_row_tuple: [local_id, server_id, type, seq, sender_id, time,
+                #                 status, ... , source(11), content(12), ..., db_path(17)]
+                if not isinstance(msg, (list, tuple)) or len(msg) < 2:
+                    continue
 
-                    # 提取发送者名称
-                    sender_raw = msg[1]
-                    if isinstance(sender_raw, list) and sender_raw:
-                        sender = sender_raw[-1]
-                    elif isinstance(sender_raw, str):
-                        sender = Path(sender_raw).stem
-                    else:
-                        sender = str(sender_raw)
+                db_row = msg[1]
+                if not isinstance(db_row, (list, tuple)) or len(db_row) < 13:
+                    continue
 
-                    # 跳过自己的消息
-                    if not content:
-                        continue
+                # 只处理文本消息 (type=1)
+                msg_type = db_row[2]
+                if msg_type != 1:
+                    continue
 
-                    logger.info(f"[{sender}] {content[:80]}")
-                    self.on_message(sender, content, sender)
+                # 消息内容 (index 12)
+                content = str(db_row[12]) if db_row[12] else ""
+                if not content:
+                    continue
+
+                # 发送者标识 (index 11=source, 或 index 4=sender_id)
+                sender_raw = db_row[11]
+                if isinstance(sender_raw, str) and sender_raw:
+                    sender = sender_raw
+                else:
+                    sender = str(db_row[4])
+
+                logger.info(f"[{sender}] {content[:80]}")
+                self.on_message(sender, content, sender)
 
             except Exception as e:
                 logger.error(f"处理消息出错: {e}")
