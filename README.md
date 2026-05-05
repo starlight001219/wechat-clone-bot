@@ -1,88 +1,373 @@
-# 微信智能机器人
+# 🤖 微信智能机器人 (WeChat AI Bot)
 
-基于微信 PC 4.x + wx4py + DeepSeek API / 本地模型的智能回复机器人，可模仿指定人的语气风格自动回复。
+基于 **微信 PC 4.x** + **wx4py** + **LLM (DeepSeek / 本地微调模型)** 的智能回复机器人。
 
-## 功能特性
+可模仿指定联系人的语气风格，实现**自动化聊天 + 语音合成**。
 
-- **AI 自动回复** — 基于 LLM 生成上下文相关的回复，模仿指定人的语气
-- **对话记忆** — 自动记录最近聊天上下文，回复更有连贯性
-- **语音合成 (TTS)** — 集成 Edge-TTS，支持将文字回复转为语音（免费，无需 API Key）
-- **本地模型支持** — 可接入 LoRA 微调的 Qwen2.5 模型（需 GPU 训练）
+---
 
-## 环境要求
+## 📋 项目概述
 
-| 依赖 | 版本 | 用途 |
+本项目通过微信 PC 客户端的 UI 自动化接口，实时监听指定联系人的消息，调用大语言模型生成符合目标人物风格的回复，并通过微信窗口自动发送。同时集成 **Edge-TTS 语音合成**，可将文字回复转为语音。
+
+核心流程：
+
+```
+接收消息 → 查询对话历史 → LLM 生成回复 → 存入记忆 → 发送文字 → (可选) 生成语音
+```
+
+---
+
+## ✨ 功能特性
+
+| 功能 | 说明 |
+|------|------|
+| **AI 自动回复** | 基于 LLM 生成上下文相关的回复，模仿指定人语气 |
+| **对话记忆管理** | 自动记录最近 20 轮对话，持久化到本地文件，回复更连贯 |
+| **双 LLM 模式** | 支持远程 API（DeepSeek / OpenAI / Claude）和本地微调模型 |
+| **语音合成 (TTS)** | 集成 Edge-TTS，免费无 API Key 要求，自动生成 MP3 语音文件 |
+| **多发音人** | 支持 4 种中文发音人：女声、男声、活泼女声、阳光男声 |
+| **聊天记录导出** | 支持导出微信聊天记录为 CSV，用于 WeClone 微调训练 |
+| **日志审计** | 完整的运行日志记录，方便调试和监控 |
+
+---
+
+## 🛠️ 技术栈
+
+| 技术 | 用途 | 版本 |
 |------|------|------|
-| Windows | 10/11 | 必需 |
-| 微信 PC 客户端 | **4.x** | 支持最新版 |
-| Python | 3.10+ | 运行时 |
+| **Windows 10/11** | 运行平台（必需，依赖 UI Automation） | — |
+| **微信 PC 客户端 4.x** | 聊天界面自动化操作 | 4.1.8+ |
+| **Python** | 主开发语言 | 3.10+ |
+| **wx4py** | 微信 PC 4.x UI 自动化库 | ≥0.2.1 |
+| **pywin32** | Windows API 接口（窗口操作、UI 控制） | ≥300 |
+| **OpenAI Python SDK** | 远程 LLM API 调用 | ≥1.0.0 |
+| **Edge-TTS** | 微软 Edge 浏览器 TTS 引擎（免费） | ≥6.0.0 |
+| **Loguru** | 结构化日志记录 | ≥0.7.0 |
+| **python-dotenv** | 环境变量管理 | ≥1.0.0 |
+| **Qwen2.5-1.5B (可选)** | 本地微调基座模型 | LoRA |
+| **LLaMA Factory (可选)** | 微调训练框架 | — |
 
-## 快速启动
+---
 
-### 1. 安装依赖
-
-```bash
-cd D:\新建文件夹\misc\wechat-bot
-pip install -r requirements.txt
-```
-
-### 2. 配置
-
-编辑 `.env` 文件：
-
-```
-TARGET_NAME=要模仿的人名       # ← 改成你要模仿的人
-TTS_ENABLED=true               # 可选：启用语音合成
-```
-
-### 3. 登录微信
-
-打开微信 PC 客户端，用**小号**登录。**保持窗口可见**（不要最小化到托盘）。
-
-### 4. 启动机器人
-
-```bash
-py -3.10 bot\main.py
-```
-
-## 项目结构
+## 🏗️ 项目架构
 
 ```
 wechat-bot/
-├─ bot/
-│  ├─ main.py             # 主程序入口（整合记忆 + TTS）
-│  ├─ wechat_client.py    # wx4py 微信自动化（支持微信 4.x）
-│  ├─ llm_client.py       # LLM API 调用 + Persona 提示词
-│  ├─ memory_manager.py   # 对话记忆管理（上下文保持）
-│  ├─ tts_client.py       # Edge-TTS 语音合成
-│  └─ chat_log.py         # 聊天记录导出
-├─ config.py              # 配置读取
-├─ start.bat              # 一键启动
-├─ .env                   # API Key 等敏感配置
-└─ logs/                  # 运行日志
+├── bot/                          # 核心业务逻辑
+│   ├── main.py                   # 主入口：初始化、消息循环、整合各模块
+│   ├── wechat_client.py          # 微信客户端：连接、发送、监听消息轮询
+│   ├── llm_client.py             # LLM 客户端：调用本地或远程 API 生成回复
+│   ├── memory_manager.py         # 对话记忆：上下文管理 + JSON 持久化
+│   ├── tts_client.py             # 语音合成：Edge-TTS 文字转语音
+│   ├── chat_log.py               # 聊天记录导出工具（供 WeClone 训练用）
+│   └── __init__.py
+├── config.py                     # 配置读取（从 .env 加载）
+├── .env                          # 敏感配置（API Key、开关等）【不上传】
+├── .env.example                  # 配置模板
+├── .gitignore                    # Git 忽略规则
+├── requirements.txt              # Python 依赖清单
+├── start.bat                     # Windows 一键启动脚本
+├── export_chat.py                # 独立聊天记录导出脚本
+├── data/                         # 运行时数据（记忆、音频）【不上传】
+│   ├── conversation_memory.json  # 对话记忆持久化文件
+│   └── audio/                    # TTS 生成的 MP3 文件
+└── logs/                         # 运行日志【不上传】
 ```
 
-## 语音合成（TTS）
+### 核心模块说明
 
-启用后，每次回复会自动生成语音文件到 `data/audio/` 目录。
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| **入口** | `bot/main.py` | 初始化 WeChatBot 类，注册消息回调，启动事件循环 |
+| **消息监听** | `bot/wechat_client.py` | 通过 wx4py 连接微信，轮询聊天窗口消息列表，检测新消息 |
+| **AI 回复** | `bot/llm_client.py` | 支持双模式：本地模型 HTTP 调用 / DeepSeek API / Claude API |
+| **记忆系统** | `bot/memory_manager.py` | 环形缓冲区存储最近 N 轮对话，支持多联系人隔离和 JSON 持久化 |
+| **语音合成** | `bot/tts_client.py` | Edge-TTS 异步/同步接口，支持多种中文发音人 |
+| **数据导出** | `export_chat.py` | 独立脚本，滚动加载聊天记录，导出为 WeClone 格式 CSV |
+| **配置管理** | `config.py` | 从 .env 文件读取配置，提供类型化配置类 |
 
-- 基于 Microsoft Edge-TTS，**完全免费**，无需注册
-- 支持多种中文发音人：`xiaoxiao`(女声)、`yunyang`(男声)、`xiaoyi`(活泼)、`yunxi`(阳光)
-- 可在 `.env` 中设置 `TTS_VOICE` 切换发音人
+---
 
-## 两种 LLM 模式
+## 🔧 环境要求
 
-### 本地模型模式
-- 需先完成 LoRA 微调，启动推理服务
-- 配置: `USE_LOCAL_MODEL=true`
+| 依赖项 | 要求 | 说明 |
+|--------|------|------|
+| **操作系统** | Windows 10 或 11 | 必须，依赖 Windows UIAutomation API |
+| **微信客户端** | PC 4.x 版本 | 当前适配 4.1.8，升级后可能需要更新 wx4py |
+| **Python** | 3.10 或更高 | 推荐 3.10.11 |
+| **网络** | 需要联网 | 远程 API 模式 / Edge-TTS 首次使用需要联网 |
+| **GPU（可选）** | NVIDIA RTX 4060 8GB+ | 仅本地训练/推理需要 |
+| **显存（可选）** | ≥8GB | Qwen2.5-1.5B 推理约需 3GB，训练约需 6.7GB |
 
-### 远程 API 模式（默认）
-- 无需 GPU，配置 API Key 即可使用
-- 支持 DeepSeek、OpenAI、Claude 等
+---
 
-## 注意事项
+## 📥 安装与配置
 
-1. **微信窗口必须可见** — 基于 UIAutomation，窗口不可见时无法工作
-2. **不要最小化到托盘** — 可以最小化到任务栏，但不能完全隐藏
-3. **封号风险** — 个人微信自动化有被封风险，**建议用小号**
-4. **首次 TTS** — 第一次使用语音合成时会自动下载语音模型，需要联网
+### 1. 安装 Python 依赖
+
+```bash
+cd wechat-bot
+pip install -r requirements.txt
+```
+
+### 2. 配置环境变量
+
+复制配置模板并编辑：
+
+```bash
+copy .env.example .env
+```
+
+编辑 `.env` 文件，至少配置以下内容：
+
+```ini
+# 选择 LLM 模式（二选一）
+
+# 模式 A：远程 API（推荐快速体验）
+LLM_API_KEY=sk-your-deepseek-api-key
+LLM_API_BASE=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+
+# 模式 B：本地模型（需先训练）
+# USE_LOCAL_MODEL=true
+# LOCAL_MODEL_URL=http://127.0.0.1:8000
+
+# 被模仿人的名字
+TARGET_NAME=周文慧
+
+# 要监控的联系人（留空=监控所有会话）
+TARGET_WXID=星夜
+
+# TTS 语音合成开关
+TTS_ENABLED=false
+TTS_VOICE=xiaoxiao
+```
+
+### 3. 完整配置项说明
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `LLM_API_KEY` | `""` | DeepSeek / OpenAI 兼容 API Key |
+| `LLM_API_BASE` | `https://api.deepseek.com/v1` | API 端点地址 |
+| `LLM_MODEL` | `deepseek-chat` | 远程模型名称 |
+| `USE_LOCAL_MODEL` | `false` | 是否使用本地模型 |
+| `LOCAL_MODEL_URL` | `http://127.0.0.1:8000` | 本地推理服务地址 |
+| `TARGET_NAME` | `朋友` | 系统提示词中的角色名 |
+| `TARGET_WXID` | `""` | 监控的联系人（逗号分隔），留空=全部 |
+| `TTS_ENABLED` | `false` | 是否启用语音合成 |
+| `TTS_VOICE` | `xiaoxiao` | 发音人（见 TTS 说明） |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
+
+---
+
+## 🚀 使用方法
+
+### 1. 登录微信
+
+打开微信 PC 客户端，**用小号登录**。保持微信窗口**可见**（可以最小化到任务栏，但不能完全隐藏到托盘）。
+
+### 2. 启动机器人
+
+**方式一：双击启动（推荐）**
+
+双击 `start.bat` 即可一键启动。
+
+**方式二：命令行启动**
+
+```bash
+cd wechat-bot
+py -3.10 bot\main.py
+```
+
+### 3. 运行时说明
+
+- 机器人会自动打开指定联系人的聊天窗口
+- 每 2 秒轮询一次新消息
+- 检测到新消息后自动调用 LLM 生成回复并发送
+- 按 `Ctrl+C` 安全停止
+
+---
+
+## 🧪 两种 LLM 模式详解
+
+### 模式 A：远程 API（快速开始）
+
+无需 GPU，配置 API Key 即可使用。支持：
+- **DeepSeek**（默认，性价比高）
+- **OpenAI GPT**（兼容接口）
+- **Claude**（需额外配置 ANTHROPIC_API_KEY）
+
+### 模式 B：本地微调模型（效果更好）
+
+完整流程：
+
+```
+聊天记录导出 → WeClone 数据处理 → LoRA 微调 → 部署推理服务 → 对接机器人
+```
+
+**步骤 1：导出聊天记录**
+
+```bash
+cd wechat-bot
+py export_chat.py 联系人名称
+```
+
+**步骤 2：使用 WeClone 训练**
+
+详见 [WeClone 项目](https://github.com/xming521/WeClone)。
+
+**步骤 3：启动推理服务**
+
+```bash
+cd WeClone
+py serve_model.py
+```
+
+服务运行在 `http://127.0.0.1:8000`。
+
+**步骤 4：配置机器人**
+
+```ini
+# .env
+USE_LOCAL_MODEL=true
+LOCAL_MODEL_URL=http://127.0.0.1:8000
+```
+
+---
+
+## 🔊 语音合成 (TTS)
+
+### 简介
+
+基于 **Microsoft Edge-TTS** 引擎，完全**免费**，无需任何 API Key 或注册账号。使用 Edge 浏览器内置的神经网络语音合成技术，发音自然流畅。
+
+### 配置
+
+```ini
+# .env
+TTS_ENABLED=true
+TTS_VOICE=xiaoxiao       # 可选发音人
+```
+
+### 发音人列表
+
+| 配置值 | 发音人 | 性别 | 风格 |
+|--------|--------|------|------|
+| `xiaoxiao` | 晓晓 | 女声 | 亲切自然（默认） |
+| `yunyang` | 云扬 | 男声 | 专业沉稳 |
+| `xiaoyi` | 晓伊 | 女声 | 活泼生动 |
+| `yunxi` | 云希 | 男声 | 阳光明朗 |
+
+### 工作方式
+
+1. 每次 AI 生成文字回复后，自动调用 Edge-TTS API 生成 MP3 文件
+2. 音频文件保存在 `data/audio/` 目录
+3. 文件名基于回复内容 MD5 哈希，避免重复生成
+4. 首次使用需要联网下载语音模型（约 1-5MB）
+
+### 手动调用
+
+```python
+from bot.tts_client import TTSClient
+
+tts = TTSClient(voice="xiaoxiao")
+audio_path = tts.speak_sync("你好，今天天气真不错！")
+print(f"音频文件：{audio_path}")
+```
+
+---
+
+## 🧠 对话记忆系统
+
+### 工作原理
+
+- 使用环形缓冲区（`collections.deque`）存储每个联系人的最近 N 轮对话
+- 默认保存最近 20 轮对话，可配置
+- 每次回复后自动持久化到 `data/conversation_memory.json`
+- 启动时自动加载上一次的记忆
+
+### 记忆格式
+
+```json
+{
+  "wxid_xxx": [
+    {
+      "timestamp": 1746452800.0,
+      "user": "今天天气真好",
+      "bot": "是啊，要出去走走吗？"
+    }
+  ]
+}
+```
+
+---
+
+## 📝 开发流程
+
+### 开发背景
+
+本项目旨在通过 AI 技术实现微信聊天的智能化回复，最初从 DeepSeek API 的简单调用开始，逐步演进为完整的机器人系统。
+
+### 版本演进
+
+| 阶段 | 改进内容 |
+|------|----------|
+| **v1.0** | 基础框架：wx4py 连接 + DeepSeek API 调用 + 人物风格提示词 |
+| **v2.0** | 本地模型支持：集成 WeClone 训练的 LoRA 微调 Qwen2.5 模型 |
+| **v3.0** | 对话记忆：添加上下文管理、持久化、多联系人隔离 |
+| **v4.0** | 语音合成：集成 Edge-TTS，支持多种中文发音人 |
+| **v5.0** | 优化完善：消息队列、错误处理、日志系统、文档 |
+
+### 技术选型理由
+
+| 选择 | 理由 |
+|------|------|
+| **wx4py**（而非 ItChat） | 支持微信 4.x 最新版，UIA 方式更稳定 |
+| **Edge-TTS**（而非百度/阿里 TTS） | 完全免费，无需 API Key，中文发音质量高 |
+| **Qwen2.5-1.5B**（作为本地模型） | 8GB 显存下可运行的参数最大的中文模型，效果与性价比平衡 |
+| **环形缓冲区记忆**（而非数据库） | 轻量级，无需额外依赖，足够满足对话场景 |
+
+---
+
+## ⚠️ 注意事项
+
+1. **微信窗口必须可见** — 基于 UIAutomation 技术，窗口最小化到托盘时将无法读取消息
+2. **封号风险** — 个人微信自动化操作有被封可能，**强烈建议使用小号**
+3. **不要最小化到托盘** — 可以最小化到任务栏，但不要完全隐藏到系统托盘
+4. **微信版本兼容** — 当前适配 4.1.8 版本，微信升级后可能需要更新 wx4py
+5. **首次 TTS 需联网** — 第一次使用语音合成时需要下载 Edge TTS 模型
+6. **本地 GPU 推理** — 本地模式需要约 3GB 显存
+
+---
+
+## 📁 GitHub 仓库
+
+- 项目地址：[github.com/starlight001219/wechat-clone-bot](https://github.com/starlight001219/wechat-clone-bot)
+
+### 相关项目
+
+- [WeClone](https://github.com/xming521/WeClone) — 微信聊天记录提取与 AI 微调框架
+- [ZhouWenHui Chatbot](https://github.com/starlight001219/ai) — 周文慧 AI Web 聊天界面
+
+---
+
+## 📄 许可证
+
+本项目基于上游 [WeClone](https://github.com/xming521/WeClone) 项目改造，请遵守其开源许可证。
+
+---
+
+## 💬 常见问题
+
+**Q: 启动时报错 "Failed to connect"？**
+A: 确保微信已打开并登录，且版本为 4.x。
+
+**Q: 机器人不回复消息？**
+A: 检查微信窗口是否可见，以及 API Key 配置是否正确。
+
+**Q: TTS 报错 "module not found"？**
+A: 运行 `pip install edge-tts` 安装依赖。
+
+**Q: 如何切换发音人？**
+A: 修改 `.env` 中的 `TTS_VOICE` 为对应的发音人名。
