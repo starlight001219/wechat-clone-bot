@@ -1,0 +1,26 @@
+dbkey: ""  # 留空自动查找
+
+aes_xor_key: ""  # 留空自动查找
+
+logging:
+  level: INFO
+  path: logs
+
+mcp:
+  host: 127.0.0.1
+  port: 8000
+
+plugins:
+  self-msg-plugin:
+    enabled: false
+  block-empty-room-plugin:
+    enabled: false
+  image-aes-plugin:
+    enabled: true
+  openai-bot-plugin:
+    enabled: false
+
+rpa:
+  action_delay: 0.3
+  timeout: 30
+  window_margin: 20

@@ -5,8 +5,9 @@
 __pycache__/
 *.pyc
 *.pyo
-*.pyc
 *.egg-info/
+dist/
+build/
 
 # Logs
 *.log
@@ -18,6 +19,37 @@ data/conversation_memory.json
 data/audio/*.mp3
 data/
 
+# 语音缓存
+voice_cache/
+
+# 运行时图片
+runtime_images/
+
 # IDE
 .idea/
 .vscode/
+
+# 系统
+Thumbs.db
+.DS_Store
+
+# 外部 SDK
+omni-bot-sdk-oss/
+wxauto/
+
+# 临时测试脚本
+wechat-bot/tools/demo_test.py
+wechat-bot/tools/quick_test.py
+wechat-bot/tools/explore_wechat.py
+
+# 聊天记录（可能含隐私）
+chat_history.json
+
+# 模型文件
+*.pt
+*.pth
+*.onnx
+
+# 安装包
+*.exe
+*.msi
