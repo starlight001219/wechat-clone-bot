@@ -14,10 +14,15 @@ from wx4py.core import uiautomation as uia
 import win32gui
 import win32con
 
-_MESSAGE_CLASSES = {
+_MESSAGE_CLASSES_TEXT = {
     "mmui::ChatTextItemView",
     "mmui::ChatBubbleItemView",
 }
+_MESSAGE_CLASSES_VOICE = {
+    "mmui::ChatVoiceItemView",
+    "mmui::ChatVoiceBubbleView",
+}
+_MESSAGE_CLASSES = _MESSAGE_CLASSES_TEXT | _MESSAGE_CLASSES_VOICE
 
 
 @dataclass
@@ -27,6 +32,7 @@ class WeChatMessage:
     wxid: str
     roomid: str = ""
     is_group: bool = False
+    is_voice: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +51,47 @@ def _safe_children(ctrl) -> list:
         return list(ctrl.GetChildren())
     except Exception:
         return []
+
+
+def _element_key(class_name: str, text: str, element) -> str:
+    """Generate a dedup key for a chat element (text or voice)."""
+    if class_name in _MESSAGE_CLASSES_VOICE:
+        # Use element position as unique key (voice messages might share text)
+        try:
+            rect = str(element.BoundingRectangle)
+            return f"voice:{rect}"
+        except Exception:
+            return f"voice:{text}"
+    # Text messages: dedup by content
+    return f"text:{text}"
+
+
+_atomic_id_counter = 0
+
+
+def _next_id() -> str:
+    """Return a unique monotonic ID for fallback dedup."""
+    global _atomic_id_counter
+    _atomic_id_counter += 1
+    return str(_atomic_id_counter)
+
+
+def _read_chat_elements(msg_list) -> list:
+    """Read all message elements (text + voice) from the message list, newest first.
+
+    Returns list of (text, class_name, is_voice, element) tuples.
+    """
+    items = []
+    for child in _safe_children(msg_list):
+        cls = _safe_text(child, "ClassName")
+        name = _safe_text(child, "Name").strip()
+        if cls not in _MESSAGE_CLASSES:
+            continue
+        if not name and cls not in _MESSAGE_CLASSES_VOICE:
+            continue
+        is_voice = cls in _MESSAGE_CLASSES_VOICE
+        items.append((name or "[语音]", cls, is_voice, child))
+    return items[::-1]
 
 
 def _find_contact_by_name(root, name: str) -> Optional[object]:
@@ -93,19 +140,6 @@ def _find_message_list(root):
     except Exception:
         pass
     return None
-
-
-def _read_message_texts(msg_list) -> list:
-    """Read message texts from the message list, newest first."""
-    texts = []
-    for child in _safe_children(msg_list):
-        cls = _safe_text(child, "ClassName")
-        name = _safe_text(child, "Name").strip()
-        if not name:
-            continue
-        if cls in _MESSAGE_CLASSES:
-            texts.append(name)
-    return texts[::-1]  # newest first
 
 
 # ---------------------------------------------------------------------------
@@ -166,16 +200,17 @@ class WeChatClient:
         """Read and cache all current messages as 'already seen'."""
         msg_list = _find_message_list(self._wx.window.uia.root)
         if msg_list:
-            texts = _read_message_texts(msg_list)
-            for t in texts:
-                self._known.add(t)
-            logger.info(f"Cached {len(texts)} existing messages as seen")
+            elements = _read_chat_elements(msg_list)
+            for text, cls, is_voice, elem in elements:
+                self._known.add(_element_key(cls, text, elem))
+            logger.info(f"Cached {len(elements)} existing messages as seen")
 
     def send_audio_file(self, file_path: str, who: str) -> bool:
         """Send an audio file as a file attachment to the target contact."""
         try:
             self._wx.chat_window.send_file_to(who, file_path, target_type='contact')
             logger.info(f"Sent audio to {who}: {file_path}")
+            self._mark_own_messages_as_seen()
             return True
         except Exception as e:
             logger.error(f"Send audio to {who} failed: {e}")
@@ -195,12 +230,77 @@ class WeChatClient:
             time.sleep(0.3)
 
             self._wx.chat_window.send_to(who, message, target_type='contact')
-            self._known.add(message)  # don't echo ourselves
+            self._known.add(f"text:{message}")  # don't echo ourselves
+            self._mark_own_messages_as_seen()
             logger.info(f"Sent to {who}: {message[:50]}")
             return True
         except Exception as e:
             logger.error(f"Send to {who} failed: {e}")
             return False
+
+    def _mark_own_messages_as_seen(self, max_wait: float = 3.0):
+        """After sending, wait for own message UI element to appear and mark it seen."""
+        deadline = time.time() + max_wait
+        while time.time() < deadline:
+            time.sleep(0.5)
+            try:
+                root = self._wx.window.uia.root
+                if not root:
+                    continue
+                msg_list = _find_message_list(root)
+                if not msg_list:
+                    continue
+                new_count = 0
+                for text, cls, is_voice, elem in _read_chat_elements(msg_list):
+                    key = _element_key(cls, text, elem)
+                    if key not in self._known:
+                        self._known.add(key)
+                        new_count += 1
+                if new_count > 0:
+                    return
+            except Exception:
+                pass
+
+    def play_voice_message(self) -> bool:
+        """Find and click the most recent voice message to start playback."""
+        try:
+            root = self._wx.window.uia.root
+            if not root:
+                return False
+            msg_list = _find_message_list(root)
+            if not msg_list:
+                return False
+            for text, cls, is_voice, elem in _read_chat_elements(msg_list):
+                if is_voice:
+                    elem.Click()
+                    logger.info(f"Clicked voice message to play")
+                    return True
+            logger.warning("No voice message element found to click")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to click voice message: {e}")
+            return False
+
+    def discover_message_classes(self) -> list:
+        """Scan message list and return ALL unique class names found (for debugging voice detection)."""
+        classes = set()
+        try:
+            root = self._wx.window.uia.root
+            if not root:
+                return []
+            msg_list = _find_message_list(root)
+            if not msg_list:
+                return []
+            for child in _safe_children(msg_list):
+                cls = _safe_text(child, "ClassName")
+                if cls:
+                    classes.add(cls)
+            result = sorted(classes)
+            logger.info(f"Discovered message classes: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Class discovery failed: {e}")
+            return []
 
     def on_message(self, callback: Callable):
         self._on_message_cb = callback
@@ -234,16 +334,20 @@ class WeChatClient:
                     time.sleep(2)
                     continue
 
-                texts = _read_message_texts(msg_list)
-                for t in texts:
-                    if t not in self._known:
-                        self._known.add(t)
-                        logger.info(f"New message detected: {t[:60]}")
+                for text, cls, is_voice, elem in _read_chat_elements(msg_list):
+                    key = _element_key(cls, text, elem)
+                    if key not in self._known:
+                        self._known.add(key)
+                        if is_voice:
+                            logger.info(f"New voice message detected")
+                        else:
+                            logger.info(f"New message detected: {text[:60]}")
                         if self._on_message_cb:
                             msg = WeChatMessage(
                                 sender=self._target,
-                                content=t,
+                                content=text,
                                 wxid=self._target,
+                                is_voice=is_voice,
                             )
                             self._on_message_cb(msg)
                         break  # only process the newest one per cycle

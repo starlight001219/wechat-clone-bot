@@ -45,6 +45,9 @@ wechat-bot/tools/explore_wechat.py
 # 聊天记录（可能含隐私）
 chat_history.json
 
+# 任务日志（内部开发记录）
+task_logs/
+
 # 模型文件
 *.pt
 *.pth

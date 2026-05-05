@@ -29,6 +29,15 @@ class Config:
     tts_voice: str = os.getenv("TTS_VOICE", "xiaoxiao")
     voice_only: bool = os.getenv("VOICE_ONLY", "false").lower() == "true"  # 仅语音回复，不发送文字
 
+    # ASR (Automatic Speech Recognition) — receive voice messages
+    asr_enabled: bool = os.getenv("ASR_ENABLED", "true").lower() == "true"
+    asr_language: str = os.getenv("ASR_LANGUAGE", "zh-CN")
+    asr_record_seconds: float = float(os.getenv("ASR_RECORD_SECONDS", "10"))
+
+    # Voice Call Mode (real-time phone call)
+    voice_call_enabled: bool = os.getenv("VOICE_CALL_ENABLED", "false").lower() == "true"
+    voice_call_target: str = os.getenv("VOICE_CALL_TARGET", "星夜")
+
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
