@@ -171,6 +171,16 @@ class WeChatClient:
                 self._known.add(t)
             logger.info(f"Cached {len(texts)} existing messages as seen")
 
+    def send_audio_file(self, file_path: str, who: str) -> bool:
+        """Send an audio file as a file attachment to the target contact."""
+        try:
+            self._wx.chat_window.send_file_to(who, file_path, target_type='contact')
+            logger.info(f"Sent audio to {who}: {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Send audio to {who} failed: {e}")
+            return False
+
     def send_message(self, message: str, who: str) -> bool:
         """Send a reply to the target contact."""
         if not message.strip():

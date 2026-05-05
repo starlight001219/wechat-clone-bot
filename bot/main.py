@@ -39,7 +39,7 @@ class WeChatBot:
 
         # Restore conversation memory
         self.memory.load_from_disk()
-        logger.info(f"Loaded conversation memory. TTS enabled={self.cfg.tts_enabled}")
+        logger.info(f"Loaded conversation memory. TTS={self.cfg.tts_enabled}, VoiceOnly={self.cfg.voice_only}")
 
         self.wx.on_message(self.handle_message)
 
@@ -77,20 +77,34 @@ class WeChatBot:
         self.memory.add_turn(msg.wxid, msg.content, reply)
         self.memory.save_to_disk()
 
-        # Send text reply
-        time.sleep(1)
-        self.wx.send_message(reply, msg.wxid)
+        # Generate TTS audio if enabled
+        if self.cfg.tts_enabled:
+            if self.tts is None:
+                self._init_tts()
+            if self.tts and self.tts.available:
+                try:
+                    audio_path = self.tts.speak_sync(reply)
+                except Exception as e:
+                    logger.warning(f"TTS generation error: {e}")
+                    audio_path = None
+            else:
+                audio_path = None
+        else:
+            audio_path = None
 
-        # Optional: generate TTS audio
-        if self.cfg.tts_enabled and self.tts is None:
-            self._init_tts()
-        if self.tts and self.tts.available:
-            try:
-                audio_path = self.tts.speak_sync(reply)
-                if audio_path:
-                    logger.info(f"Voice reply generated: {audio_path}")
-            except Exception as e:
-                logger.warning(f"TTS generation error: {e}")
+        time.sleep(1)
+
+        if self.cfg.voice_only and audio_path:
+            # Voice-only mode: send audio file, skip text
+            self.wx.send_audio_file(audio_path, msg.wxid)
+            logger.info(f"Voice-only reply sent (text skipped)")
+        else:
+            # Normal mode: send text reply
+            self.wx.send_message(reply, msg.wxid)
+
+        # In non-voice-only mode, still log the audio if generated
+        if audio_path and not self.cfg.voice_only:
+            logger.info(f"Voice reply generated: {audio_path}")
 
     def run(self):
         """Start the bot."""

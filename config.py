@@ -27,6 +27,7 @@ class Config:
     # TTS (Text-to-Speech) — Edge-TTS
     tts_enabled: bool = os.getenv("TTS_ENABLED", "false").lower() == "true"
     tts_voice: str = os.getenv("TTS_VOICE", "xiaoxiao")
+    voice_only: bool = os.getenv("VOICE_ONLY", "false").lower() == "true"  # 仅语音回复，不发送文字
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
