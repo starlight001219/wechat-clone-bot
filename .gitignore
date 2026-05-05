@@ -1,0 +1,23 @@
+# API keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyc
+*.egg-info/
+
+# Logs
+*.log
+logs/
+*.jsonl
+
+# Runtime data
+data/conversation_memory.json
+data/audio/*.mp3
+data/
+
+# IDE
+.idea/
+.vscode/

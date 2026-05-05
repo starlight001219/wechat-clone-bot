@@ -1,0 +1,6 @@
+wx4py>=0.2.1
+openai>=1.0.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+pywin32>=300
+edge-tts>=6.0.0
